@@ -1,37 +1,37 @@
-Chat model: openai:gpt-4o-mini | Embedding: openai:text-embedding-3-small | top_k=3 | chunk_size=800 | chunks=176 | KG: 202 nodes / 380 rels
+Chat model: openai:gpt-4o-mini | Embedding: openai:text-embedding-3-small | top_k=3 | chunk_size=800 | chunks=176 | KG: 205 nodes / 383 rels
 
 == Indexing (one-off)
 pipeline  calls    in_tok  out_tok       USD  seconds
-flat        176     56072        0   0.00112     45.4
-graph       196     91958     4534   0.00922    119.4
+flat        176     56072        0   0.00112     40.8
+graph       196     91958     4726   0.00934    113.2
 
 == Querying (mean per question)
 pipeline  recall  judge   in_tok  out_tok       USD  seconds
-flat        0.43   1.00      694       47   0.00013     1.47
-graph       0.80   1.50     4314       86   0.00069     2.43
+flat        0.43   1.00      694       47   0.00013     1.36
+graph       0.80   1.67     4391       82   0.00070     2.23
 
 == Per question
---- Q1 [single-hop-law] flat recall=1.00 judge=2 1.58s
+--- Q1 [single-hop-law] flat recall=1.00 judge=2 1.17s
 Tiền chất là hóa chất không thể thiếu được trong quá trình điều chế, sản xuất chất ma túy được quy định trong danh mục tiền chất do Chính phủ ban hành.
---- Q1 [single-hop-law] graph recall=1.00 judge=2 2.68s
-Theo Luật Phòng, chống ma túy 2021, tiền chất là hóa chất không thể thiếu được trong quá trình điều chế, sản xuất chất ma túy được quy định trong danh mục tiền chất do Chính phủ ban hành. (Điều 2 khoản 4)
---- Q2 [single-hop-news] flat recall=1.00 judge=2 1.16s
+--- Q1 [single-hop-law] graph recall=1.00 judge=2 2.53s
+Theo Luật Phòng, chống ma túy 2021, tiền chất được định nghĩa tại Điều 2 khoản 4 như sau: Tiền chất là hóa chất không thể thiếu được trong quá trình điều chế, sản xuất chất ma túy được quy định trong danh mục tiền chất do Chính phủ ban hành.
+--- Q2 [single-hop-news] flat recall=1.00 judge=2 1.21s
 Trần Thanh Tuấn (25 tuổi) và Trần Minh Tâm (32 tuổi) lãnh án tử hình trong vụ đường dây mua bán hơn 36kg ma túy.
---- Q2 [single-hop-news] graph recall=1.00 judge=2 1.86s
-Trong vụ đường dây mua bán hơn 36kg ma túy bị TAND TP.HCM xét xử ngày 28-9, những bị cáo lãnh án tử hình là Trần Thanh Tuấn và Trần Minh Tâm. Căn cứ vào Điều 251 Bộ luật Hình sự về tội mua bán trái phép chất ma túy.
---- Q3 [cross-kb] flat recall=0.00 judge=0 0.95s
+--- Q2 [single-hop-news] graph recall=1.00 judge=2 1.51s
+Trong vụ đường dây mua bán hơn 36kg ma túy bị TAND TP.HCM xét xử ngày 28-9, những bị cáo lãnh án tử hình là Trần Thanh Tuấn và Trần Minh Tâm.
+--- Q3 [cross-kb] flat recall=0.00 judge=0 0.85s
 Không đủ thông tin.
---- Q3 [cross-kb] graph recall=1.00 judge=2 2.37s
+--- Q3 [cross-kb] graph recall=1.00 judge=2 3.10s
 Lê Minh Thành bị tuyên 36 tháng tù về tội mua bán trái phép chất ma túy. Tội này được quy định tại Điều 251 BLHS với khung hình phạt cơ bản từ 02 năm đến 07 năm tù.
---- Q4 [cross-kb] flat recall=0.00 judge=0 0.98s
+--- Q4 [cross-kb] flat recall=0.00 judge=0 0.88s
 Không đủ thông tin.
---- Q4 [cross-kb] graph recall=0.33 judge=1 2.66s
-Giang hồ 'Hoàng Nato' bị bắt về hành vi tàng trữ trái phép chất ma túy. Theo Điều 249 Bộ luật Hình sự, hành vi này có thể bị phạt tù tối đa lên đến 20 năm hoặc tù chung thân nếu thuộc các trường hợp quy định tại khoản 4 của Điều 249.
---- Q5 [cross-kb-multi-hop] flat recall=0.60 judge=1 1.58s
+--- Q4 [cross-kb] graph recall=1.00 judge=2 1.46s
+Giang hồ 'Hoàng Nato' bị bắt về hành vi tổ chức sử dụng trái phép chất ma túy. Hành vi này có thể bị phạt tù tối đa 20 năm hoặc tù chung thân theo Điều 255 Bộ luật Hình sự.
+--- Q5 [cross-kb-multi-hop] flat recall=0.60 judge=1 1.69s
 Cái Quang Huy bị truy tố về tội vận chuyển trái phép chất ma túy với loại ma túy là MDMA. Với khối lượng MDMA hơn 9,6kg trong vụ này, khoản b) của điều luật tương ứng được áp dụng, và khung hình phạt là từ 20 năm tù, tù chung thân hoặc tử hình.
---- Q5 [cross-kb-multi-hop] graph recall=0.80 judge=1 2.24s
-Cái Quang Huy bị truy tố về tội vận chuyển trái phép chất ma túy với loại ma túy là MDMA. Với khối lượng MDMA trong vụ này là hơn 9,6kg, khoản áp dụng tương ứng là khoản 4 của Điều 251 Bộ luật Hình sự (BLHS). Khung hình phạt theo khoản này là bị phạt tù 20 năm, tù chung thân hoặc tử hình.
---- Q6 [aggregation] flat recall=0.00 judge=1 2.55s
+--- Q5 [cross-kb-multi-hop] graph recall=0.80 judge=1 1.67s
+Cái Quang Huy bị truy tố về tội "vận chuyển trái phép chất ma túy" với loại ma túy là MDMA. Với khối lượng MDMA trong vụ này là hơn 9,6kg, khoản áp dụng tương ứng là khoản 4 của Điều 251 Bộ luật Hình sự (BLHS), trong đó quy định rằng phạm tội thuộc trường hợp này có thể bị phạt tù 20 năm, tù chung thân hoặc tử hình.
+--- Q6 [aggregation] flat recall=0.00 judge=1 2.38s
 Cả ba vụ việc trong tin tức đều có liên quan đến ma túy MDMA. Cụ thể:
 
 1. Vụ việc của Đức liên quan đến số viên nén hình tam giác màu hồng - xám được xác định là MDMA.
@@ -39,11 +39,12 @@ Cả ba vụ việc trong tin tức đều có liên quan đến ma túy MDMA. C
 3. Vụ việc của Đông liên quan đến 0,686g ma túy MDMA được thu giữ trong buồng chữa bệnh.
 
 Tất cả đều có liên quan đến ma túy MDMA.
---- Q6 [aggregation] graph recall=0.67 judge=1 2.75s
+--- Q6 [aggregation] graph recall=0.00 judge=1 3.15s
 Các vụ việc trong tin tức có liên quan đến ma túy MDMA bao gồm:
 
-1. Vụ tổ chức sử dụng ma túy tại Sầm Sơn - Lê Văn Đông bị cáo buộc tàng trữ và sử dụng nhiều loại ma túy, trong đó có 0,686g MDMA.
-2. Vụ góp tiền mua ma túy tại Hà Nội - Lê Minh Thành đã bị bắt với 5 viên nén màu trắng, được xác định là ma túy MDMA.
-3. Vụ vận chuyển ma túy từ Đức về Việt Nam - Cái Quang Huy và Nguyễn Tiến Đạt bị cáo buộc vận chuyển tổng khối lượng hơn 9,6kg MDMA.
+1. **Vụ vận chuyển ma túy từ Đức về Việt Nam**: Tổng khối lượng hơn 9,6kg MDMA.
+2. **Vụ góp tiền mua ma túy tại Hà Nội**: Liên quan đến việc mua bán trái phép chất ma túy, trong đó có MDMA.
+3. **Vụ tổ chức sử dụng ma túy tại Sầm Sơn**: Có thu giữ 0,686g ma túy MDMA.
+4. **Vụ mua bán hơn 36kg ma túy tại TP.HCM**: Hai bị cáo bị tuyên án về tội mua bán trái phép chất ma túy, trong đó có MDMA.
 
-Ngoài ra, Điều 252 BLHS cũng đề cập đến ma túy MDMA.
+Các vụ việc này đều có liên quan đến ma túy MDMA.

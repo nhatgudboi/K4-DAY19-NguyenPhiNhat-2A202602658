@@ -11,38 +11,40 @@ Dán 2 bảng `Indexing` và `Querying` từ `ket_qua_benchmark_kg.txt`:
 ```
 == Indexing (one-off)
 pipeline  calls    in_tok  out_tok       USD  seconds
-flat        176     56072        0   0.00112     45.4
-graph       196     91958     4534   0.00922    119.4
+flat        176     56072        0   0.00112     40.8
+graph       196     91958     4726   0.00934    113.2
 
 == Querying (mean per question)
 pipeline  recall  judge   in_tok  out_tok       USD  seconds
-flat        0.43   1.00      694       47   0.00013     1.47
-graph       0.80   1.50     4314       86   0.00069     2.43
+flat        0.43   1.00      694       47   0.00013     1.36
+graph       0.80   1.67     4391       82   0.00070     2.23
 ```
 
 | Chỉ số | Flat | Graph | Graph / Flat |
 | --- | --- | --- | --- |
-| Indexing USD | $0.00112 | $0.00922 | ×8.23 |
-| Indexing giây | 45.4s | 119.4s | ×2.63 |
-| Mỗi câu: USD | $0.00013 | $0.00069 | ×5.31 |
-| Mỗi câu: giây | 1.47s | 2.43s | ×1.65 |
-| Mỗi câu: in_tok | 694 | 4314 | ×6.22 |
+| Indexing USD | $0.00112 | $0.00934 | ×8.34 |
+| Indexing giây | 40.8s | 113.2s | ×2.77 |
+| Mỗi câu: USD | $0.00013 | $0.00070 | ×5.38 |
+| Mỗi câu: giây | 1.36s | 2.23s | ×1.64 |
+| Mỗi câu: in_tok | 694 | 4391 | ×6.33 |
 
 **Chi phí tăng thêm đến từ đâu?**
-> Chi phí tăng thêm ở pha **Indexing** (gấp 8.23 lần USD và 2.63 lần thời gian) chủ yếu đến từ việc gọi LLM (`gpt-4o-mini`) để trích xuất có cấu trúc JSON cho 20 bài báo tin tức (tốn 4,534 out_tok và prompt dài kèm danh sách thực thể chuẩn), trong khi Flat RAG chỉ gọi API embedding giá rẻ. Ở pha **Querying** (gấp 5.31 lần USD), chi phí tăng do prompt của GraphRAG dài hơn gấp hơn 6 lần (4,314 in_tok so với 694 in_tok của Flat RAG) vì phải chứa toàn bộ danh sách facts trích xuất từ các bước nhảy đa chặng (multi-hop) trên Knowledge Graph và các khoản luật liên quan.
+> Chi phí tăng thêm ở pha **Indexing** (gấp 8.34 lần USD và 2.77 lần thời gian) đến từ việc gọi LLM (`gpt-4o-mini`) để trích xuất có cấu trúc JSON cho 20 bài báo tin tức (4,726 out_tok kèm prompt dài chứa danh sách tội danh chuẩn), trong khi Flat RAG chỉ gọi API embedding giá rẻ hơn 30 lần (0.02 USD/1M token so với 0.60 USD/1M token của chat). Ở pha **Querying** (gấp 5.38 lần USD), chi phí tăng vì prompt của GraphRAG dài gấp 6.33 lần (4,391 in_tok so với 694 in_tok) do phải chứa toàn bộ facts từ các bước nhảy multi-hop cùng các khoản luật liên quan.
+>
+> **Phân rã chi phí tăng thêm ở Querying (0.00057 USD/câu):** toàn bộ phần chênh lệch nằm ở **input token** (+3,697 token/câu), không phải output (+35 token/câu). Nghĩa là chi phí không đến từ LLM viết dài hơn mà đến từ **dữ kiện graph bị đưa vào prompt quá nhiều**. Đây là điểm có thể tối ưu rẻ nhất: giảm `max_facts` hoặc lọc khoản luật bằng điều kiện chặt hơn sẽ giảm phần lớn khoản chênh này mà không ảnh hưởng chất lượng.
 
 ## 2. Từng câu hỏi (10 điểm)
 
 | Câu | Loại | Flat recall / judge | Graph recall / judge | Thắng | Vì sao (1 câu) |
 | --- | --- | --- | --- | --- | --- |
 | Q1 | single-hop-law | 1.00 / 2 | 1.00 / 2 | Hòa | Cả hai đều tìm được định nghĩa tiền chất trong Luật PCMT; Flat RAG rẻ và nhanh hơn nhưng GraphRAG dẫn nguồn Điều 2 khoản 4 chuẩn xác. |
-| Q2 | single-hop-news | 1.00 / 2 | 1.00 / 2 | Hòa | Thông tin án tử hình của Tuấn và Tâm nằm trọn vẹn trong một bài báo nên vector search của Flat RAG lấy đủ; GraphRAG bổ sung thêm căn cứ Điều 251 BLHS. |
-| Q3 | cross-kb | 0.00 / 0 | 1.00 / 2 | Graph | Flat RAG bị phân mảnh thông tin giữa 2 tài liệu nên trả lời "Không đủ thông tin", còn GraphRAG kết nối trọn vẹn qua node Crime để lấy Điều 251 và khung 2-7 năm. |
-| Q4 | cross-kb | 0.00 / 0 | 0.33 / 1 | Graph (yếu) | Flat RAG thất bại hoàn toàn. GraphRAG kéo được mối liên hệ sang KB luật nên recall khác 0, **nhưng trả lời sai tội danh**: đáp án chuẩn là *tổ chức sử dụng* (Điều 255) còn hệ thống dẫn tới *tàng trữ* (Điều 249) — xem lỗi E5. |
-| Q5 | cross-kb-multi-hop | 0.60 / 1 | 0.80 / 1 | Hòa (đều sai) | Cả hai pipeline đều nói **Điều 251** trong khi đáp án chuẩn là **Điều 250 khoản 4**; GraphRAG chỉ nhỉnh hơn ở chi tiết khối lượng — xem lỗi E5. |
-| Q6 | aggregation | 0.00 / 1 | 0.67 / 1 | Graph | GraphRAG gom nhóm các vụ án liên quan đến MDMA qua cấu trúc đồ thị thực thể (`Substance <- INVOLVES - Case`), cho recall và judge vượt trội so với tìm kiếm vector đơn thuần. |
+| Q2 | single-hop-news | 1.00 / 2 | 1.00 / 2 | Hòa | Thông tin án tử hình của Tuấn và Tâm nằm trọn vẹn trong một bài báo nên vector search của Flat RAG lấy đủ; GraphRAG dẫn thêm bối cảnh vụ án nhưng không thêm thông tin mới. |
+| Q3 | cross-kb | 0.00 / 0 | 1.00 / 2 | **Graph** | Flat RAG bị phân mảnh thông tin giữa 2 tài liệu nên trả lời "Không đủ thông tin", còn GraphRAG nối qua node `Crime` để lấy Điều 251 và khung 2-7 năm. |
+| Q4 | cross-kb | 0.00 / 0 | 1.00 / 2 | **Graph** | Flat RAG tê liệt hoàn toàn; GraphRAG nối đúng tội danh *tổ chức sử dụng* sang Điều 255 và lấy khung 20 năm / chung thân. |
+| Q5 | cross-kb-multi-hop | 0.60 / 1 | 0.80 / 1 | **Hòa (đều sai điều)** | Cả hai pipeline đều nói **Điều 251** trong khi đáp án chuẩn là **Điều 250 khoản 4**; GraphRAG chỉ nhỉnh hơn ở chi tiết khối lượng — xem lỗi E5. |
+| Q6 | aggregation | 0.00 / 1 | 0.00 / 1 | **Hòa (cùng thất bại)** | Cả hai đều trả lời đúng về nghĩa nhưng trượt `must_include`: thiếu "Pháp y tâm thần" và đếm vụ 36kg ngoài danh sách chuẩn. Xem lỗi E4. |
 
-> **Quy luật:** GraphRAG thắng rõ ở nhóm **cross-kb / aggregation** (Q3, Q4, Q6) vì đó là lúc thông tin bắt buộc phải nằm ở 2 tài liệu khác nhau mà không chunk nào chứa trọn. Ở nhóm **single-hop** (Q1, Q2) hai bên hòa nhau, nên ưu thế của KG không hiện ra. Nhưng lưu ý: cả 3 câu thắng đều là câu mà KG **có dữ kiện đúng**; hai câu mà KG *cầu nối được nhưng ánh xạ sai* (Q4, Q5) lại cho thấy độ hơn về recall chưa đi kèm độ hơn về tính đúng — xem lỗi E5.
+> **Quy luật:** GraphRAG thắng tuyệt đối ở **cross-kb có đáp án xác định duy nhất** (Q3, Q4): Flat RAG trả lời "Không đủ thông tin" (recall 0.00, judge 0) vì thông tin bắt buộc nằm ở 2 tài liệu khác nhau, còn GraphRAG trả lời đúng cả ba ý (recall 1.00, judge 2). Ở nhóm **single-hop** (Q1, Q2) hai bên hòa — KG không tạo thêm giá trị gì. Biên của ưu thế nằm ở **aggregation** (Q6): đây là câu không có một đáp án duy nhất, và cả hai bên đều trượt phép đo `must_include` — xem lỗi E4. Nói cách khác, KG thắng khi *đường đi trên graph là duy nhất*, và ngang bạn khi câu hỏi mở.
 
 ## 3. Phân tích lỗi (20 điểm)
 
@@ -86,6 +88,24 @@ RETURN k.name AS name, k.doc_id AS doc_id;
 | LLM trích xuất | `charges = ["chống người thi hành công vụ"]` — LLM **có** trích tội danh, không phải trả về mảng rỗng |
 | `link_entity` (KG-1) | Không tìm thấy trong `known_crimes` ⇒ trả `None` ⇒ `charges` thành `[]` |
 | `build_graph` (KG-2) | `FOREACH (crime IN $charges \| ...)` lặp 0 lần ⇒ **không tạo cạnh `CHARGED_WITH`** |
+
+- **Bằng chứng 3 — cầu nối dự phòng qua `Substance` cũng gãy.** Nhắc tới cơ chế dự phòng đã nêu trong `ONTOLOGY.md` mục 4, truy vấn cạnh thực tế đã lưu cho node Case cô lập:
+
+```cypher
+MATCH (k:Case) WHERE NOT (k)-[:CHARGED_WITH]->()
+OPTIONAL MATCH (k)-[r:INVOLVES]->(s:Substance)
+RETURN k.name AS name, s.name AS substance, r.amount AS amount;
+```
+
+```
+╒══════════════════════════════════════════════╤══════════════╤════════╕
+│name                                          │substance    │amount   │
+╞══════════════════════════════════════════════╪══════════════╪════════╡
+│"Vụ tông cảnh sát giao thông ở An Giang"    │"ma túy"     │""       │
+└──────────────────────────────────────────────┴──────────────┴────────┘
+```
+
+Vụ án có `INVOLVES -> "ma túy"`, nhưng không có `Clause` nào `MENTIONS` chất mang tên `"ma túy"`, và `"ma túy"` lại không phải tên chất cụ thể nào trong `SUBSTANCES` (`Heroine`, `MDMA`...). Đường nối sang KB luật vì thế **đứt ở cả hai đầu cầu**, xác nhận đây không phải sự cố tạm thời mà là hạn chế cấu trúc của ontology.
 
 - **Nguyên nhân:** Lỗi **không nằm ở bước trích xuất LLM** như trực giác hay nghĩ đầu tiên, mà nằm ở **thiết kế ontology: phạm vi KB luật hẹp hơn phạm vi thực tế của KB tin tức**. Cả hai KB đều được thu thập theo chủ đề "ma túy", nhưng KB luật chỉ gồm 13 Điều của Chương XX BLHS + 5 Điều của Luật PCMT, trong khi bài báo này nói về tội *"chống người thi hành công vụ"* (Điều 330 BLHS) — hoàn toàn nằm ngoài KB luật. `link_entity` chỉ liên kết vào danh sách tội danh đã có trong graph, nên tội danh hợp lệ ngoài phạm vi đó bị **âm thầm loại bỏ**. Cùng cơ chế đó, cột `substances` ghi `"ma túy"` (tên gọi chung) thay vì một chất cụ thể, nên cầu nối dự phòng qua `Substance` cũng không khớp `MENTIONS` của bất kỳ khoản luật nào.
   - Hậu quả thiết kế: node `Case` này rơi vào "mồ côi" — có mặt trong KB tin tức nhưng về mặt pháp lý bất khả dụng, và **không có tín hiệu cảnh báo nào** vì `link_entity` trả `None` là hành vi hợp lệ.
@@ -132,6 +152,28 @@ Trong kết quả trên:
 - `Methamphetamine` và `methamphetamine` tồn tại song song 2 node.
 - `thuốc lắc` (tên gọi đường phố của `MDMA`) tồn tại như một node độc lập thay vì được gộp vào `MDMA`.
 
+Truy vấn chứng minh trực tiếp hai cặp trùng lặp chỉ khác hoa/thường:
+
+```cypher
+MATCH (a:Substance), (b:Substance)
+WHERE a.name <> b.name AND toLower(a.name) = toLower(b.name)
+RETURN DISTINCT a.name AS a, b.name AS b;
+```
+
+```
+╒═══════════════════════╤═══════════════════════╕
+│a                     │b                      │
+╞═══════════════════════╪═══════════════════════╡
+│"ketamine"            │"Ketamine"             │
+│"methamphetamine"     │"Methamphetamine"      │
+╞═══════════════════════╪═══════════════════════╡
+│"Ketamine"            │"ketamine"             │
+│"Methamphetamine"     │"methamphetamine"      │
+└──────────────────────┴───────────────────────┘
+```
+
+Hệ quả trực tiếp: truy vấn đếm số chất ma túy khác nhau trong graph sẽ **đếm thừa**, và một câu hỏi kiểu *"vụ nào liên quan đến Ketamine"* sẽ chỉ khớp một nửa node — cùng một chất bị coi như hai thực thể.
+
 - **Nguyên nhân:** Lỗi nằm ở **thiết kế ontology và chuẩn hóa dữ liệu khi nạp vào Neo4j**. Ràng buộc `CONSTRAINT FOR (n:Substance) REQUIRE n.name IS UNIQUE` trong Neo4j có tính phân biệt chữ hoa / chữ thường (case-sensitive). Khi trích xuất văn bản luật, regex lấy chữ hoa chuẩn (`Ketamine`), nhưng khi trích xuất tin tức, LLM trả về chữ thường (`ketamine`) hoặc dùng từ lóng (`thuốc lắc`), dẫn đến lệnh `MERGE (sub:Substance {name: s.name})` tạo ra các node khác nhau.
 - **Đề xuất sửa:**
   1. Thêm hàm chuẩn hóa `normalize_substance` tương tự như `normalize_crime`, tự động lowercase hoặc ánh xạ về tên chuẩn IUPAC/BLHS trước khi `MERGE` vào Neo4j.
@@ -141,98 +183,119 @@ Trong kết quả trên:
 
 ### Lỗi E4: Phép đo sai lệch (Measurement error)
 
-- **Hiện tượng:** Tại câu **Q6** (`aggregation`), câu trả lời của GraphRAG hoàn toàn chính xác về mặt ngữ nghĩa và nội dung thực tế (judge đánh giá tích cực), nhưng chỉ số đo từ khóa thô `recall` lại bị thấp (chỉ đạt 0.67 thay vì 1.00).
-- **Bằng chứng:** 
-Trích câu trả lời của GraphRAG tại Q6:
+- **Hiện tượng:** Tại câu **Q6** (`aggregation`), **cả hai pipeline đều đạt recall = 0.00** dù câu trả lời của cả hai đều đúng về nghĩa và `judge` đều là 1. Đây là ca mâu thuẫn rõ nhất giữa hai phép đo trong cùng bộ benchmark.
+- **Bằng chứng:** Trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
 
 ```
---- Q6 [aggregation] graph recall=0.67 judge=1 2.75s
-Các vụ việc trong tin tức có liên quan đến ma túy MDMA bao gồm:
-1. Vụ tổ chức sử dụng ma túy tại Sầm Sơn - Lê Văn Đông bị cáo buộc tàng trữ và sử dụng nhiều loại ma túy, trong đó có 0,686g MDMA.
-2. Vụ góp tiền mua ma túy tại Hà Nội - Lê Minh Thành đã bị bắt với 5 viên nén màu trắng, được xác định là ma túy MDMA.
-3. Vụ vận chuyển ma túy từ Đức về Việt Nam - Cái Quang Huy và Nguyễn Tiến Đạt bị cáo buộc vận chuyển tổng khối lượng hơn 9,6kg MDMA.
+--- Q6 [aggregation] flat recall=0.00 judge=1 2.38s
+1. Vụ việc của Đức liên quan đến số viên nén hình tam giác màu hồng - xám được xác định là MDMA.
+2. Vụ việc của Thành liên quan đến 5 viên nén màu trắng được xác định là ma túy MDMA.
+3. Vụ việc của Đông liên quan đến 0,686g ma túy MDMA được thu giữ trong buồng chữa bệnh.
+
+--- Q6 [aggregation] graph recall=0.00 judge=1 3.15s
+1. **Vụ vận chuyển ma túy từ Đức về Việt Nam**: Tổng khối lượng hơn 9,6kg MDMA.
+2. **Vụ góp tiền mua ma túy tại Hà Nội**: Liên quan đến việc mua bán trái phép chất ma túy, trong đó có MDMA.
+3. **Vụ tổ chức sử dụng ma túy tại Sầm Sơn**: Có thu giữ 0,686g ma túy MDMA.
+4. **Vụ mua bán hơn 36kg ma túy tại TP.HCM**: Hai bị cáo bị tuyên án về tội mua bán trái phép chất ma túy, trong đó có MDMA.
 ```
 
-So sánh với bộ từ khóa bắt buộc (`must_include`) của Q6 trong `benchmark_kg.json`:
-
+Đối chiếu bộ từ khóa bắt buộc của Q6 trong `data/benchmark_kg.json`:
 ```json
 "must_include": ["Cái Quang Huy", "Lê Minh Thành", "Pháp y tâm thần"]
 ```
 
-- **Nguyên nhân:** Lỗi nằm ở **chính phép đo `recall` trong thiết kế bộ benchmark**. Trong KB tin tức có tới 4 vụ việc liên quan đến MDMA (gồm cả vụ Lê Văn Đông tại Sầm Sơn). GraphRAG đã liệt kê đủ 3 vụ án cụ thể có liên quan đến MDMA từ đồ thị (`Cái Quang Huy`, `Lê Minh Thành`, và `Lê Văn Đông`), hoàn toàn giải quyết đúng câu hỏi aggregation. Tuy nhiên vì bộ benchmark cố định từ khóa bắt buộc phải có `"Pháp y tâm thần"`, nên việc GraphRAG chọn vụ Sầm Sơn thay cho vụ Pháp y tâm thần khiến điểm recall bị phạt xuống 0.67 dù câu trả lời không hề sai.
+| Từ khóa | Flat | Graph | Ghi chú |
+| --- | --- | --- | --- |
+| `Cái Quang Huy` | ✗ | ✗ | Cả hai chỉ ghi *"vụ việc của Đức"* / *"vụ vận chuyển từ Đức"* — **không ghi tên người**, dù đúng người đó có trong graph |
+| `Lê Minh Thành` | ✗ | ✗ | Cả hai chỉ ghi *"vụ việc của Thành"* — họ tên bị rút gọn thành tên gọi |
+| `Pháp y tâm thần` | ✗ | ✗ | Vụ này không có trong KB tin tức đã nạp, hoặc không được KG truy xuất ra |
+
+Ba từ khóa đều trượt ⇒ `recall = 0/3 = 0.00`, trong khi `judge = 1` cho cả hai bên. **Đây là mâu thuẫn thuần túy của phép đo, không phải lỗi của pipeline nào.**
+- **Nguyên nhân:** Lỗi nằm ở **thiết kế bộ đo `benchmark_kg.json`**, không nằm ở KG hay Flat RAG. Ba nguyên nhân cộng lại:
+  1. *Phép so khớp là chuỗi tường minh, không phải ngữ nghĩa:* `keyword_recall` kiểm tra `"cái quang huy" in answer.lower()`. Câu trả lời nào viết *"vụ vận chuyển ma túy từ Đức"* thay vì ghi rõ tên đều bị phạt điểm, dù ý nghĩa hoàn toàn đúng — và đây là cách hai hệ thống tự nhiên diễn đạt.
+  2. *Bộ từ khóa đòi hỏi một thực thể ngoài tập dữ liệu:* `"Pháp y tâm thần"` không xuất hiện ở bất kỳ câu trả lời nào của cả hai pipeline, và vụ án đó cũng không nổi bật trong 20 bài đã nạp. Đòi bắt buộc một thực thể không chắc chắn có khiến recall **không bao giờ** đạt 1.00.
+  3. *Đây là câu aggregation nên không có "đáp án đúng duy nhất":* mỗi lần chạy LLM liệt kê một tập vụ khác nhau (lần này GraphRAG liệt kê 4 vụ, lần chạy trước liệt kê 3 vụ), nên recall dao động theo cách LLM diễn đạt chứ không phản ánh chất lượng truy xứa.
 - **Đề xuất sửa:** 
-  1. Đổi phép đo `must_include` cho các câu hỏi gom nhóm (aggregation) từ logic `AND` cố định sang logic ngưỡng động hoặc danh sách tùy chọn (ví dụ: chứa ít nhất 3 trong 4 tên vụ án có MDMA).
-  2. Tin tưởng vào điểm số của LLM Judge (hoặc semantic evaluation) hơn là phụ thuộc tuyệt đối vào chuỗi string match thô ráp khi đánh giá các câu hỏi mở/tổng hợp.
+  1. *Đổi cách đo cho câu gom nhóm:* thay `must_include` cố định bằng điều kiện "**có chứa ít nhất k từ trong tập ứng viên**", hoặc đánh giá theo tập vụ án liên quan thật sự tồn tại trong graph thay vì 3 từ khóa cứng.
+  2. *Chuẩn hóa trước khi so khớp:* lowercase, bỏ dấu tiếng Việt, tách từ khóa thành cụm từ và cho phép khớp **một từ khóa con** (ví dụ tính `Lê Minh Thành` là khớp nếu câu có "Thành" kèm "Lê Minh") — hoặc đơn giản hơn là dùng embedding similarity cho câu trả lời.
+  3. *Tin cậy `judge` hơn cho câu hỏi mở:* với 2/6 câu là aggregation, `judge` phản ánh chất lượng thật, còn `recall` chỉ phản ánh cách diễn đạt. Nên báo cáo hai chỉ số tách biệt thay vì quy chúng về một điểm.
 
 ---
 
 ### Lỗi E5: LLM lệch với graph — trả lời sai điều luật (Evidence–LLM drift)
 
-- **Hiện tượng:** Ở 2 câu `cross-kb`, GraphRAG **có** dựng được đường đi qua node cầu nối `Crime` sang KB luật, nhưng câu trả lời vẫn chỉ tới **sai điều luật**. Cả hai pipeline đều đọc đúng văn bản luật nhưng ánh xạ sai tội danh sang điều luật.
-- **Bằng chứng 1 — Q5**, trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
+- **Hiện tượng:** Ở Q5, cả hai pipeline đều **đọc đúng văn bản luật** và nêu đúng khung hình phạt, nhưng vẫn chỉ tới **sai điều luật**. Câu trả lời nghe rất thuyết phục nên đây là loại lỗi khó bị phát hiện nếu không đối chiếu văn bản gốc.
+- **Bằng chứng — Q5**, trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
 
 ```
---- Q5 [cross-kb-multi-hop] graph recall=0.80 judge=1 2.24s
-Cái Quang Huy bị truy tố về tội vận chuyển trái phép chất ma túy với loại ma túy là MDMA. Với khối lượng MDMA trong vụ này là hơn 9,6kg, khoản áp dụng tương ứng là khoản 4 của Điều 251 Bộ luật Hình sự (BLHS). Khung hình phạt theo khoản này là bị phạt tù 20 năm, tù chung thân hoặc tử hình.
+--- Q5 [cross-kb-multi-hop] flat recall=0.60 judge=1 1.69s
+Cái Quang Huy bị truy tố về tội vận chuyển trái phép chất ma túy với loại ma túy là MDMA. Với khối lượng MDMA hơn 9,6kg trong vụ này, khoản b) của điều luật tương ứng được áp dụng, và khung hình phạt là từ 20 năm tù, tù chung thân hoặc tử hình.
+
+--- Q5 [cross-kb-multi-hop] graph recall=0.80 judge=1 1.67s
+Cái Quang Huy bị truy tố về tội "vận chuyển trái phép chất ma túy" với loại ma túy là MDMA. Với khối lượng MDMA trong vụ này là hơn 9,6kg, khoản áp dụng tương ứng là khoản 4 của Điều 251 Bộ luật Hình sự (BLHS), trong đó quy định rằng phạm tội thuộc trường hợp này có thể bị phạt tù 20 năm, tù chung thân hoặc tử hình.
 ```
 
 Đối chiếu với đáp án chuẩn trong `data/benchmark_kg.json` (mục `gold`):
 > *"Cái Quang Huy bị truy tố về tội **vận chuyển** trái phép chất ma túy (**Điều 250 BLHS**) với hơn 9,6kg MDMA và khoản 406g Ketamine; MDMA từ 100 gam trở lên thuộc **khoản 4 Điều 250**: tù 20 năm, tù chung thân hoặc tử hình."*
 
-→ Hệ thống nói **Điều 251**, chuẩn là **Điều 250**. Đây không phải lỗi hình thức: hai điều luật có đoạn khoản 4 gần như giống hệt nhau, nên câu trả lời *nghe* rất thuyết phục nhưng **sai điều**. Kiểm tra lại văn bản gốc trong `data/drug_law/blhs-dieu-250.md`:
+→ Cả hai đều nói **Điều 251** (mua bán), chuẩn là **Điều 250** (vận chuyển). Kiểm chứng lại bằng văn bản gốc `data/drug_law/blhs-dieu-250.md`:
 
 ```
 4. Phạm tội thuộc một trong các trường hợp sau đây, thì bị phạt tù 20 năm, tù chung thân hoặc tử hình:
 b) Heroine, Cocaine, Methamphetamine, Amphetamine, MDMA hoặc XLR-11 có khối lượng 100 gam trở lên;
 ```
 
-- **Bằng chứng 2 — Q4**, trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
+- **Bằng chứng 2 — Q4 cho thấy lỗi này không xảy ra ở mọi câu, và vì sao.** Ở lần chạy trước, Q4 cũng từng bị lệch sang Điều 249, nhưng **lần chạy hiện tại lại trả lời đúng Điều 255** (recall 1.00, judge 2):
 
 ```
---- Q4 [cross-kb] graph recall=0.33 judge=1 2.66s
-Giang hồ 'Hoàng Nato' bị bắt về hành vi tàng trữ trái phép chất ma túy. Theo Điều 249 Bộ luật Hình sự, hành vi đó có thể bị phạt tù tối đa lên đến 20 năm hoặc tù chung thân nếu thuộc các trường hợp quy định tại khoản 4 của Điều 249.
+--- Q4 [cross-kb] graph recall=1.00 judge=2 1.46s
+Giang hồ 'Hoàng Nato' bị bắt về hành vi tổ chức sử dụng trái phép chất ma túy. Hành vi này có thể bị phạt tù tối đa 20 năm hoặc tù chung thân theo Điều 255 Bộ luật Hình sự.
 ```
 
-Đáp án chuẩn: *"Dương Minh Tuấn (Hoàng Nato) bị bắt về hành vi **tổ chức sử dụng** trái phép chất ma túy (**Điều 255 BLHS**); khung cao nhất là tù 20 năm hoặc tù chung thân."*
-
-→ Hệ thống dẫn tới *tàng trữ / Điều 249* thay vì *tổ chức sử dụng / Điều 255*. Hệ quả là `must_include = ["tổ chức sử dụng", "Điều 255", "chung thân"]` chỉ khớp đúng 1/3 ⇒ `recall = 0.33`, `judge = 1`.
+Cùng một code, cùng một graph, **cùng `temperature=0`** mà kết quả lại khác. Đây là bằng chứng quan trọng nhất cho thấy lỗi là **không xác định (non-deterministic) ở tầng quyết định của LLM**, chứ không phải lỗi truy xứa xảy ra mỗi lần. Nó chỉ chọn đúng khi danh sách facts tình cờ đưa tội danh đúng lên trước — một trường hợp may mắn, không phải hành vi được bảo đảm.
 
 - **Nguyên nhân:** Lỗi nằm ở **2 bước, một trong số đó là thiết kế ontology**:
 
-  1. *Bước trích xuất (KG-2):* cả 13 Điều của Chương XX BLHS có khoản 4 với cấu trúc gần giống nhau ("tù 20 năm, tù chung thân hoặc tử hình"). Ontology hiện tại mô hình hóa `Crime` chỉ ở mức **tên tội danh**, mà **không mô hình hóa ngưỡng khối lượng** dù chính những con số này quyết định việc chọn khoản nào. Vì vậy `context()` buộc phải dùng heuristic tiêu chí số như `cl.number = 1 OR cl.number = 4 OR EXISTS { MENTIONS chất }` — với khoản 4 thì **mọi điều luật đều hợp lệ về mặt hình thức**, nên Cypher trả về cả Điều 250 lẫn Điều 251 cùng lúc.
-  2. *Bước sinh câu trả lời (KG-4):* khi nhiều điều luật cùng thoả điều kiện lọc và lại có cùng câu chữ khoản 4, LLM không có tín hiệu nào để chọn, và **bám theo thứ tự xuất hiện** trong danh sách facts ⇒ chọn nhầm điều luật. Ở Q4, cùng cơ chế đó biến *"tàng trữ"* thành nhãn dán khi tội danh thật là *"tổ chức sử dụng"* — tội danh đúng **đã có trong graph** (Điều 255 được nạp đầy đủ) nhưng bị các tội danh khác của cùng một vụ án "cạnh tranh" và thắng phiếu.
+  1. *Bước truy xứa (KG-3):* cả 13 Điều của Chương XX BLHS có khoản 4 với cấu trúc gần giống nhau ("tù 20 năm, tù chung thân hoặc tử hình"). Ontology hiện tại mô hình hóa `Crime` chỉ ở mức **tên tội danh**, mà **không mô hình hóa ngưỡng khối lượng** dù chính những con số này quyết định việc chọn khoản nào. Vì vậy `context()` buộc phải dùng heuristic tiêu chí số như `cl.number = 1 OR cl.number = 4 OR EXISTS { MENTIONS chất }` — với khoản 4 thì **mọi điều luật đều hợp lệ về mặt hình thức**, nên Cypher trả về cả Điều 250 lẫn Điều 251 cùng lúc. Tức là **KG-3 không hề tạo ra tín hiệu phân biệt**; nó đẩy cả hai ứng viên xuống cho KG-4.
+  2. *Bước sinh câu trả lời (KG-4):* khi hai điều luật cùng thoả điều kiện lọc và lại có cùng câu chữ khoản 4, LLM chỉ còn căn cứ **thứ tự xuất hiện trong danh sách facts** để quyết định — một tín hiệu hoàn toàn tình cờ, không mang thông tin pháp lý. Vì vậy kết quả là *lucky/unlucky*, giải thích tại sao Q4 đúng ở lần này và sai ở lần trước.
 - **Đề xuất sửa:**
-  1. *Đưa ngưỡng khối lượng vào graph, không để LLM tự suy luận:* thêm property `threshold_g` trên `Clause` (Điều 250 khoản 4 điểm b = 100 gam) và parse `amount` của cạnh `INVOLVES` thành số (`r.amount_g`). Khi đó Cypher lọc được bằng **phép so sánh số học** `cl.threshold_g <= k.amount_g` thay vì bằng `cl.number = 4`, và chỉ còn đúng một điều luật thỏa điều kiện.
-  2. *Phân biệt tội danh ở mức hành vi, không gộp theo vụ án:* nếu một bài báo nêu nhiều tội danh cho cùng một người, lưu tội danh **trên cạnh `INVOLVED_IN`** (đã có sẵn `r.charge`) thay vì chỉ gắn vào `Case`. Khi đó câu hỏi về *"Hoàng Nato"* sẽ bám đúng tội danh gắn với chính người đó, thay vì phải chọn giữa các tội danh của cả vụ.
+  1. *Đưa ngưỡng khối lượng vào graph, không để LLM tự suy luận:* thêm property `threshold_g` trên `Clause` (Điều 250 khoản 4 điểm b = 100 gam) và parse `amount` của cạnh `INVOLVES` thành số (`r.amount_g`). Khi đó Cypher lọc được bằng **phép so sánh số học** `cl.threshold_g <= k.amount_g` thay vì bằng `cl.number = 4`, và chỉ còn đúng một điều luật thỏa điều kiện ⇒ hết tình huống phải "đoán".
+  2. *Sắp xếp facts có chủ đích thay vì để ngẫu nhiên:* order `cl.number`, rồi `penalty` theo mức nghiêm khắc tăng dần, để thứ tự mà LLM nhìn thấy mang thông tin pháp lý chứ không phải thứ tự `MATCH` trả về.
+  3. *Phân biệt tội danh ở mức hành vi, không gộp theo vụ án:* nếu một bài báo nêu nhiều tội danh cho cùng một người, lưu tội danh **trên cạnh `INVOLVED_IN`** (đã có sẵn `r.charge`) thay vì chỉ gắn vào `Case`. Khi đó câu hỏi về một người cụ thể sẽ bám đúng tội danh gắn với chính người đó, thay vì phải chọn giữa các tội danh của cả vụ.
   3. *Giảm nhiễu ngữ cảnh:* `max_facts` hiện đang nạp cả khoản 1, 2, 4 của mọi điều luật liên quan. Nên ưu tiên khoản có `penalty` khớp với mức án đã biết từ tin tức (ví dụ `r.sentence` chứa "tử hình" ⇒ ưu tiên khoản 4), thay vì đưa hết vào cho LLM tự lọc.
 
 ## 4. Kết luận (5 điểm)
 
 Khi nào nên dùng KG, khi nào Flat RAG là đủ? Dẫn số liệu ở mục 1–2.
-> - **Khi nào Flat RAG là đủ:** Với các bài toán hỏi đáp đơn chặng (single-hop), phạm vi câu trả lời nằm gọn trong một văn bản hoặc một đoạn trích duy nhất (như câu Q1 và Q2, cả Flat và Graph đều đạt recall 1.00 và judge 2), Flat RAG là lựa chọn tối ưu tuyệt đối. Flat RAG tiết kiệm hơn **8.23 lần chi phí indexing** ($0.00112 vs $0.00922), tiết kiệm **5.31 lần chi phí mỗi câu hỏi** ($0.00013 vs $0.00069) và có độ trễ nhanh hơn 40–60% (1.47s vs 2.43s).
-> - **Khi nào nên dùng Knowledge Graph (GraphRAG):** Knowledge Graph là bắt buộc khi câu hỏi yêu cầu **kết nối thông tin rải rác xuyên nhiều nguồn dữ liệu (cross-KB, multi-hop)** mà không có một chunk văn bản nào chứa đủ ngữ cảnh. Ở Q3, Flat RAG hoàn toàn tê liệt (recall 0.00, judge 0 — trả lời "Không đủ thông tin"), trong khi GraphRAG đạt độ chính xác hoàn hảo (recall 1.00, judge 2): đây là bằng chứng rõ nhất cho thấy KG thắng *vì cấu trúc*, không phải vì model to hơn. Ở Q6, KG cũng vượt trội (recall 0.67 vs 0.00).
+> - **Khi nào Flat RAG là đủ:** Với các bài toán hỏi đáp đơn chặng (single-hop), phạm vi câu trả lời nằm gọn trong một văn bản hoặc một đoạn trích duy nhất (Q1 và Q2 — cả Flat và Graph đều recall 1.00, judge 2), Flat RAG là lựa chọn tối ưu tuyệt đối. Flat RAG tiết kiệm hơn **8.34 lần chi phí indexing** ($0.00112 vs $0.00934), **5.38 lần chi phí mỗi câu hỏi** ($0.00013 vs $0.00070) và nhanh hơn 39% (1.36s vs 2.23s) mà không thiếu thông tin gì.
+> - **Khi nào nên dùng Knowledge Graph (GraphRAG):** KG là bắt buộc khi câu hỏi yêu cầu **kết nối thông tin rải rác xuyên nhiều nguồn dữ liệu (cross-kb)** mà không chunk văn bản nào chứa đủ ngữ cảnh, **và câu đó có một đáp án xác định duy nhất**. Q3 và Q4 là hai ví dụ rõ nhất: Flat RAG trả lời "Không đủ thông tin" (recall 0.00, judge 0), GraphRAG trả lời đúng cả ba ý (recall 1.00, judge 2). Đây là bằng chứng cho thấy KG thắng *vì cấu trúc*, không phải vì model to hơn.
+> - **Biên của ưu thế — câu hỏi mở:** Ở Q6 (aggregation) hai bên hòa nhau và cùng trượt `recall` (0.00) dù `judge` đều là 1. Với câu hỏi không có một đáp án duy nhất, graph **không tạo ra lợi thế đo được**; nó chỉ cho thêm một cách duyệt dữ liệu khác. Đây là ranh giới thực tế: **KG giải quyết bài toán truy xứa theo đường đi, không giải quyết bài toán tổng hợp mở.**
 >
-> - **Cảnh báo quan trọng — recall cao KHÔNG đồng nghĩa trả lời đúng:** Q4 và Q5 cho thấy điểm yếu còn lại của hướng tiếp cận này. Cả hai pipeline đều **đọc đúng văn bản luật** nhưng vẫn chỉ sai điều (Q5: Điều 251 thay vì Điều 250; Q4: Điều 249 thay vì Điều 255) vì ontology chỉ mô hình hóa tội danh mà chưa mô hình hóa **ngưỡng khối lượng**, và vì `context()` nạp khoản 1 + 2 + 4 của mọi điều luật liên quan rồi để LLM tự chọn. Nói cách khác, KG giải quyết được bài toán *truy xứa* nhưng chưa giải quyết bài toán *suy luận định lượng*. Muốn sửa thì phải đưa ngưỡng khối lượng vào graph và lọc bằng phép so sánh số trong Cypher (xem lỗi E5), chứ không thêm prompt.
+> - **Cảnh báo quan trọng — recall cao KHÔNG đồng nghĩa trả lời đúng, và kết quả không ổn định:** Q5 cho thấy cả hai pipeline đều **đọc đúng văn bản luật** nhưng vẫn chỉ sai điều (Điều 251 thay vì Điều 250) vì ontology chỉ mô hình hóa tội danh mà chưa mô hình hóa **ngưỡng khối lượng**, và vì `context()` nạp khoản 1 + 2 + 4 của mọi điều luật liên quan rồi để LLM tự chọn. Đáng chú ý hơn: Q4 ở lần chạy trước sai (Điều 249) nhưng lần chạy này lại đúng (Điều 255) dù cùng code và `temperature=0` — chứng minh quyết định cuối của hệ thống là **tình cờ theo thứ tự facts**, không ổn định. Muốn sửa thì phải đưa ngưỡng khối lượng vào graph và lọc bằng phép so sánh số trong Cypher (xem lỗi E5), chứ không thêm prompt.
 >
-> **Điểm hòa vốn:** chênh lệch chi phí là khoảng **$0.00056/câu hỏi** ($0.00069 − $0.00013) và **0.96 giây/câu**. Ở quy mô 100 câu hỏi, GraphRAG tốn thêm $0.056 so với Flat RAG — vẫn rất nhỏ. Vì vậy **ranh giới quyết định không nằm ở chi phí mà nằm ở tỉ lệ câu hỏi cross-kb**: nếu trên 50% câu hỏi cần nối 2 KB thì KG đáng tiền, vì mỗi câu đó Flat RAG trả lời "Không đủ thông tin" (recall 0.00) — một câu hỏi sai cũng tốn tiền gọi LLM. Nếu phần lớn câu hỏi là single-hop như Q1–Q2 thì Flat RAG thắng rõ về cả chi phí lẫn độ trễ mà không thiếu gì.
+> **Điểm hòa vốn:** chênh lệch chi phí là khoảng **$0.00057/câu hỏi** ($0.00070 − $0.00013) và **0.87 giây/câu**. Ở quy mô 100 câu hỏi, GraphRAG tốn thêm $0.057 so với Flat RAG — vẫn rất nhỏ. Vì vậy **ranh giới quyết định không nằm ở chi phí mà nằm ở tỉ lệ câu hỏi cross-kb có đáp án duy nhất**: nếu trên 50% câu hỏi thuộc nhóm đó thì KG đáng tiền, vì mỗi câu đó Flat RAG trả lời "Không đủ thông tin" (recall 0.00) — một câu hỏi sai vẫn tốn tiền gọi LLM. Nếu phần lớn câu hỏi là single-hop hoặc aggregation thì Flat RAG thắng rõ về chi phí và độ trễ mà không thiếu gì.
+>
+> **Hướng tối ưu đầu tiên nếu phải dùng cả hai:** giảm chi phí querying của GraphRAG. Toàn bộ phần chênh lệch nằm ở **input token** (+3.697/câu) chứ không phải output (+35/câu), tức là dữ kiện graph đưa vào prompt đang nhiều hơn cần thiết. Siết điều kiện lọc khoản luật sẽ cắt được phần lớn khoản chênh này mà không giảm chất lượng.
 
 ## 5. Tự kiểm (5 điểm)
 
 ```
 $ pytest tests/ -q
 ................................................                         [100%]
-48 passed in 0.11s
+48 passed in 0.10s
 
 $ python bench_kg.py --check
 [OK] Dữ liệu: 18 điều luật, 20 bài báo
 [OK] KG-1 link_entity
 [OK] Neo4j kết nối được
 [provider] chat = openai:gpt-4o-mini | embedding = openai:text-embedding-3-small
-[OK] KG-2 build_graph: 148 node / 293 cạnh, đường xuyên 2 KB dài 2 cạnh
-[OK] KG-3 context: 27 dữ kiện, có Điều 251
+[OK] KG-2 build_graph: 146 node / 289 cạnh, đường xuyên 2 KB dài 2 cạnh
+[OK] KG-3 context: 17 dữ kiện, có Điều 251
 [OK] KG-4 GraphRAGAgent.answer
-[OK] Chi phí check: 1 lần gọi LLM, $0.00077. Graph nhỏ (luật + 1 bài) vẫn còn trong Neo4j để bạn xem; chạy --judge để dựng graph đầy đủ.
+[OK] Chi phí check: 1 lần gọi LLM, $0.00065.
 ```
+
+> Lưu ý về tính tái lập: hai lần chạy `--check` cho ra số node/cạnh hơi khác nhau (146/289 so với 148/293) vì phần trích xuất LLM không hoàn toàn deterministic. Vì vậy `ket_qua_benchmark_kg.txt` trong repo được sinh từ **đúng một lần chạy `--judge` cụ thể**, và mọi con số trong báo cáo này được lấy từ đúng file đó (202→205 node / 380→383 cạnh ở dòng tiêu đề do 2 lần build graph trong cùng phiên).
 
 ### Minh chứng ảnh chụp màn hình từ Neo4j Browser
 
@@ -256,9 +319,9 @@ Người đã chọn cho `kg_my_case.png`: **Cái Quang Huy** (bị can trong v�
 ## Vấn đề gặp phải (không tính điểm)
 
 Còn lại 4 hạn chế đã phân tích có bằng chứng ở mục 3 và mục 8 của `ONTOLOGY.md`:
-- **E1** — 1/20 vụ án rơi vào "mồ côi" vì tội danh nằm ngoài phạm vi 18 điều luật đã nạp, và `link_entity` loại bỏ âm thầm không cảnh báo.
-- **E5** — Q4/Q5 trả lời sai điều luật vì thiếu mô hình hóa ngưỡng khối lượng trong ontology.
-- **E3** — `Substance` bị phân mảnh theo hoa/thường và tên lóng (`Ketamine`/`ketamine`, `thuốc lắc` ≠ `MDMA`).
-- **E4** — `recall` chỉ so khớp chuỗi, nên phạt oan câu trả lời đúng ở Q6.
+- **E1** — 1/14 vụ án rơi vào "mồ côi" vì tội danh nằm ngoài phạm vi 18 điều luật đã nạp, và `link_entity` loại bỏ âm thầm không cảnh báo. Cầu nối dự phòng qua `Substance` cũng gãy vì node đó chỉ là tên gọi chung `"ma túy"`.
+- **E5** — Q5 trả lời sai điều luật (Điều 251 thay vì Điều 250) vì thiếu mô hình hóa ngưỡng khối lượng. Tệ hơn: Q4 cho kết quả **không ổn định** giữa hai lần chạy, vì quyết định cuối phụ thuộc thứ tự facts.
+- **E3** — `Substance` bị phân mảnh: `Ketamine`/`ketamine` và `Methamphetamine`/`methamphetamine` là 4 node cho 2 chất; `thuốc lắc` tách riêng khỏi `MDMA`.
+- **E4** — `recall` chỉ so khớp chuỗi và bộ `must_include` đòi hỏi thực thể ngoài tập dữ liệu, nên Q6 có recall 0.00 cho cả hai pipeline dù cả hai trả lời đúng nghĩa.
 
-Ngoài ra, benchmark chỉ gồm 6 câu nên chưa đủ cơ sở để kết luận thống kê về độ trễ; và quy mô KB (18 điều luật, 20 bài báo) còn nhỏ nên chưa thấy rõ chi phí KG có cải thiện hay không khi graph lớn lên.
+Ngoài ra: benchmark chỉ 6 câu nên chưa đủ cơ sở kết luận thống kê về độ trễ; quy mô KB (18 điều luật, 20 bài báo) còn nhỏ nên chưa thấy KG có cải thiện hay không khi graph lớn lên; và hai lần chạy cho số node/cạnh khác nhau (202/380 so với 205/383) cho thấy **trích xuất LLM không deterministic**, cần nhiều lần chạy mới kết luận được.
