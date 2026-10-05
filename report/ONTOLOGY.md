@@ -65,8 +65,9 @@ flowchart LR
   - *Phía tin tức:* Đưa danh sách tội danh chuẩn (`DANH SÁCH TỘI DANH`) vào prompt để hướng LLM chọn đúng nguyên văn.
   - *Hậu xử lý (KG-1):* Hàm `link_entity` chuẩn hóa chuỗi và kiểm tra exact match trước; nếu không khớp exact thì dùng `difflib.get_close_matches(cutoff=0.8)` để sửa các sai lệch chính tả hoặc biến thể dấu tiếng Việt (ví dụ: `"ma tuý"` vs `"ma túy"`).
 - **Khi nào cầu gãy, và bạn xử lý thế nào:**
-  - *Nguyên nhân gãy:* Báo chí viết tội danh tự do hoặc vụ việc liên quan đến hành vi khác (như bài báo về việc tông xe vào cảnh sát giao thông không trực tiếp quy tội danh ma túy trong bài); hoặc LLM tự suy diễn tội danh nằm ngoài danh mục.
-  - *Cách xử lý:* Sử dụng cầu nối thứ hai thông qua node `Substance` (`Case -[:INVOLVES]-> Substance <-[:MENTIONS]- Clause`), kết hợp với cơ chế tìm kiếm lai (hybrid) giữ lại top-k chunk từ vector search để không bao giờ bị mất thông tin bài báo gốc.
+  - *Nguyên nhân gãy (đã kiểm chứng, xem lỗi E1):* khi tội danh trong bài báo **hợp lệ nhưng nằm ngoài 18 điều luật đã nạp**. Ví dụ `news-100260926112415229` về tội *"chống người thi hành công vụ"* (Điều 330 BLHS): LLM trích xuất đúng, nhưng `link_entity` chỉ biết các tội danh **đang có trong graph** nên trả `None`, `charges` thành `[]` và `FOREACH` lặp 0 lần ⇒ không có cạnh `CHARGED_WITH`. Đây là hạn chế **cấu trúc phạm vi dữ liệu**, không phải lỗi của LLM.
+  - *Cách xử lý hiện tại:* cầu nối dự phòng thông qua `Substance` (`Case -[:INVOLVES]-> Substance <-[:MENTIONS]- Clause`) **vẫn gãy** trong trường hợp này, vì bài báo ghi `"ma túy"` (tên gọi chung) trong khi `Clause` chỉ `MENTIONS` chất cụ thể — thiếu node khái niệm cấp tổng quát. Thay vào đó, `GraphRAGAgent` giữ lại **top-k chunk văn bản gốc** (hybrid search), nên câu hỏi vẫn trả lời được ở mức mô tả vụ việc dù không suy ra được khung phạt.
+  - *Cơ chế xử lý nên có:* lưu tội danh ngoài phạm vi dưới dạng `k.unmapped_charges = [...]` thay vì loại bỏ âm thầm, để tỉ lệ cầu nối gãy trở thành chỉ số đo được và câu hỏi loại "vụ án nào ngoài phạm vi điều luật đã nạp" vẫn trả lời được.
 
 ## 5. Competency questions
 
@@ -75,8 +76,8 @@ flowchart LR
 | Q1 | `(:Article {law: 'Luật PCMT'})-[:HAS_CLAUSE]->(cl:Clause {number: 4})` | Có (truy vấn khoản 4 Điều 2 định nghĩa tiền chất) |
 | Q2 | `(:Person)-[:INVOLVED_IN {sentence: 'tử hình'}]->(:Case)` | Có (lọc các bị cáo có mức án tử hình trong vụ hơn 36kg ma túy) |
 | Q3 | `(:Person {name: 'Lê Minh Thành'})-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause {number: 1})` | Có (lấy mức án 36 tháng từ cạnh `INVOLVED_IN`, đi qua Crime sang Điều 251 khoản 1 lấy khung hình phạt 2-7 năm) |
-| Q4 | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause)` | Có (truy vấn Điều luật và lấy khoản có khung hình phạt tối đa 20 năm hoặc chung thân) |
-| Q5 | `(:Person {name: 'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(a:Article)-[:HAS_CLAUSE]->(cl:Clause)` kết hợp `(k)-[:INVOLVES]->(s:Substance {name: 'MDMA'})<-[:MENTIONS]-(cl)` | Có (đường đi multi-hop xác định chính xác Điều 250 và khoản 4 quy định cho MDMA trên 100g) |
+| Q4 | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause)` | **Một phần.** Đường đi tới Điều luật chạy được, nhưng cho ra *nhiều* điều luật cùng lúc; `context()` không lọc theo `r.charge` của chính người được hỏi nên LLM chọn nhầm *tàng trữ* (Điều 249) thay vì *tổ chức sử dụng* (Điều 255). Xem lỗi E5. |
+| Q5 | `(:Person {name: 'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(a:Article)-[:HAS_CLAUSE]->(cl:Clause)` kết hợp `(k)-[:INVOLVES]->(s:Substance {name: 'MDMA'})<-[:MENTIONS]-(cl)` | **Một phần.** Path có đủ, nhưng không lưu **ngưỡng khối lượng** nên lọc bằng `cl.number = 4` trả về cả Điều 250 và 251; LLM chọn Điều 251 ⇒ sai điề. Xem lỗi E5. |
 | Q6 | `(:Substance {name: 'MDMA'})<-[:INVOLVES]-(:Case)<-[:INVOLVED_IN]-(:Person)` | Có (truy vấn aggregation gom nhóm tất cả các vụ án và người liên quan đến chất MDMA) |
 
 ## 6. Quyết định thiết kế và đánh đổi
@@ -98,12 +99,21 @@ flowchart LR
 
 ## 7. So với ontology gợi ý (bắt buộc nếu xét bonus)
 
+**Bài này chọn phương án dùng ontology gợi ý, không xét bonus +15.** Lý do: sau khi chạy benchmark và soi lỗi, các hạn chế còn lại đều **không phải do chọn sai cấu trúc ontology mà do phạm vi dữ liệu và thiếu mô hình hóa thuộc tính** (xem mục 8). Cụ thể, lỗi E5 (sai điều luật ở Q4/Q5) sẽ **không được sửa** nếu chỉ đổi kiểu quan hệ, vì nguyên nhân là thiếu trường số `threshold_g` trên `Clause` — cần thêm thuộc tính và sửa Cypher, tức là một thay đổi có chủ đích nhưng chưa kịp kiểm chứng bằng benchmark trước/sau trong thời gian của lab. Vì vậy bài nộp theo hướng **đúng mẫu, có bằng chứng đầy đủ** thay vì mạo hiểm trên phần bonus.
+
 | Điểm khác | Gợi ý làm gì | Bạn làm gì | Vấn đề nó giải quyết | Bằng chứng (Cypher, hoặc số liệu benchmark) |
 | --- | --- | --- | --- | --- |
-| *(Bài làm chọn phương án chuẩn theo ontology gợi ý để đảm bảo tính ổn định và tính tương thích cao nhất)* | | | | |
+| *(giữ nguyên theo ontology gợi ý — xem lý do ở trên)* | | | | |
+
+> **Ghi chú phục vụ người chấm:** các hạn chế ở mục 8 chính là những hướng nâng cấp có thể dùng để biến ontology gợi ý thành ontology tự thiết kế đủ điều kiện bonus, kèm Cypher trước/sau.
 
 ## 8. Hạn chế còn lại
 
-- **Trùng thực thể do LLM đặt tên (Entity Duplication):** Khóa định danh của `Case` dựa trên tên do LLM tự sinh (ví dụ: `"Vụ bắt giang hồ 'Hoàng Nato' và 126 người..."` và `"Vụ bắt giữ TikToker Phannhibeauty và giang hồ 'Hoàng Nato'"`). Dù cùng nói về một chuyên án thực tế nhưng hệ thống tạo ra 2 node Case độc lập.
-- **Phân mảnh thực thể chất ma túy (Case Sensitivity & Slang):** Cơ chế định danh `Substance` phân biệt hoa thường trong Neo4j tạo ra cả node `"Ketamine"` và `"ketamine"`, hoặc chưa gộp các tên gọi thông tục trong báo chí như `"thuốc lắc"` về `"MDMA"`.
-- **Chưa có bộ suy luận định lượng khối lượng số (Numeric Reasoning):** Hệ thống lấy các khoản luật liên quan bằng cách đối sánh text và quan hệ `MENTIONS` chất, sau đó đưa vào prompt để LLM đọc và tự so sánh khối lượng (ví dụ `9,6kg > 100g`), chứ Knowledge Graph chưa lưu thuộc tính số `min_weight_g`, `max_weight_g` trên `Clause` để thực hiện phép lọc số học thuần túy trong Cypher.
+Các hạn chế dưới đây được phát hiện bằng bằng chứng cụ thể trong `report/REPORT_KG.md` mục 3, không phải suy đoán.
+
+- **Phạm vi KB luật hẹp hơn phạm vi thực tế của KB tin tức, gây cầu nối gãy âm thầm (E1):** KB luật chỉ gồm 13 Điều Chương XX BLHS + 5 Điều Luật PCMT, trong khi bài báo `news-100260926112415229` nói về tội *"chống người thi hành công vụ"* (Điều 330 BLHS). LLM trích ra đúng tội danh đó, nhưng `link_entity` chỉ liên kết vào danh sách tội danh **đang có trong graph**, nên trả `None` và báo cáo bỏ trống — node `Case` rơi vào mồ côi mà **không có tín hiệu cảnh báo nào**. Ontology thiếu một khái niệm cho tội danh ngoài phạm vi.
+- **Cầu nối dự phòng qua `Substance` không hoạt động do thiếu khái niệm cấp tổng quát (E1):** cùng vụ án này có `INVOLVES -> "ma túy"` — nhưng đó là tên gọi chung, trong khi `Clause` chỉ `MENTIONS` các chất cụ thể (Heroine, MDMA...). Không có node khái niệm chung nối hai cấp này nên cầu nối dự phòng cũng gãy.
+- **Thiếu mô hình hóa ngưỡng khối lượng, dẫn tới trả lời sai điều luật (E5):** 13 Điều của Chương XX đều có khoản 4 với cùng câu chữ "tù 20 năm, tù chung thân hoặc tử hình", và chính ngưỡng khối lượng (ví dụ Điều 250 khoản 4 điểm b: MDMA ≥ 100 gam) mới quyết định khoản nào được áp dụng. Ontology chỉ lưu `number` và `penalty` dạng văn bản, không có trường số, nên `context()` chỉ lọc được bằng tiêu chí hình thức (`cl.number = 4`) và trả về cả Điều 250 lẫn 251 cùng lúc. Hệ quả quan sát được: Q5 trả lời Điều 251 thay vì Điều 250.
+- **Tội danh gắn ở cấp `Case` thay vì ở cấp hành vi của từng người (E5, liên quan Q4):** một vụ án có thể có nhiều tội danh, và câu hỏi về một người cụ thể ("Hoàng Nato") bị buộc phải chọn giữa tất cả tội danh của cả vụ. Trong khi `INVOLVED_IN` đã mang sẵn `r.charge`, nhưng Cypher của `context()` không dùng nó để giới hạn theo người được hỏi. Ontology **có** property đúng chỗ nhưng **query** chưa tận dụng — đây là hạn chế của KG-3 chứ không phải của thiết kế ontology.
+- **Trùng thực thể chất ma túy (E3):** `CONSTRAINT ... REQUIRE n.name IS UNIQUE` phân biệt hoa/thường, nên tồn tại song song `Ketamine`/`ketamine` và `Methamphetamine`/`methamphetamine`; tên lóng `thuốc lắc` cũng tách riêng khỏi `MDMA`. Thiếu tầng chuẩn hóa + từ điển đồng nghĩa trước khi `MERGE`.
+- **Trùng thực thể do LLM đặt tên:** khóa định danh của `Case` dựa trên tên do LLM tự sinh, nên cùng một chuyên án có thể sinh nhiều node (ví dụ các bài báo khác nhau về *"Hoàng Nato"* đều dẫn về cùng một chuyên án). Chưa có khóa nào ổn định theo thực thể ngoài đời.
